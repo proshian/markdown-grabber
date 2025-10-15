@@ -24,9 +24,8 @@ You can also launch the script via a shortcut. For example, on Windows:
 3. Launch with `Ctrl + Alt + L`. Stop with `Ctrl + Alt + Q`.
 
 ## Hotkey cycle
-1. `Shift + Win + S` → capture area  
-2. `Shift + Alt + M` → convert to Markdown and push to clipboard
-3. `Ctrl + V` → paste  (Though we recommend `Win + V --> Enter` to easily detect the moment the text appears in the clipboard. Note that `Win + V` works only on Windows 10/11 and requires enabling clipboard history in Windows settings.)
+1. `Shift + Shift + M` → capture area, convert to Markdown and push to clipboard
+2. `Ctrl + V` → paste  (Though we recommend `Win + V --> Enter` to easily detect the moment the text appears in the clipboard. Note that `Win + V` works only on Windows 10/11 and requires enabling clipboard history in Windows settings.)
 
 Stop the loop with `Ctrl + Alt + Q`.
 

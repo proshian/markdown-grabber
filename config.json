@@ -8,5 +8,6 @@
   "hotkey_ocr": "ctrl+alt+m",
   "hotkey_quit": "ctrl+alt+q",
   "use_global_hotkeys": true,
-  "debug": false
+  "debug": false,
+  "use_system_snipping": false
 }
