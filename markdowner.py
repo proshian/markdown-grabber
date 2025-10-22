@@ -263,24 +263,28 @@ def save_temp_image(img: Image.Image) -> str:
     img.save(temp_path, "PNG")
     return temp_path
 
-
 def transcribe_image(img: Image.Image, tokenizer, model, cfg: Config) -> str:
     """Transcribe image using DeepSeek-OCR following the working example"""
     img = preprocess(img, cfg.max_side)
     
     # Save image to temporary file
     temp_image_path = save_temp_image(img)
+    log.debug(f"Saved temp image to: {temp_image_path}")
     
     try:
+        # Clean up old outputs first
+        cleanup_old_outputs(cfg.output_path)
+        
         # Use the exact same parameters as your working example
         prompt = "<image>\n<|grounding|>Convert the document to markdown. "
         
         log.debug("Starting OCR inference with working parameters...")
+        log.debug(f"Output path: {cfg.output_path}")
         
         # Create output directory
         os.makedirs(cfg.output_path, exist_ok=True)
         
-        # Run inference with the exact same parameters that work
+        # Run inference
         res = model.infer(
             tokenizer,
             prompt=prompt,
@@ -293,20 +297,16 @@ def transcribe_image(img: Image.Image, tokenizer, model, cfg: Config) -> str:
             test_compress=True
         )
         
-        # The infer method returns the result directly in your working example
-        if res is not None:
-            if isinstance(res, str):
-                return res.strip()
-            elif isinstance(res, (list, tuple)) and len(res) > 0:
-                return str(res[0]).strip()
+        log.debug(f"Infer method returned: {res}")
         
-        # If res is None, check if there are output files
+        # Check for output files - this should now find the .mmd files
         log.debug("Checking for output files...")
         markdown_text = check_output_files(cfg.output_path, temp_image_path)
         if markdown_text:
+            log.debug(f"Successfully extracted markdown text")
             return markdown_text
             
-        log.warning("No result returned from infer method")
+        log.warning("No result found in output files")
         return "No OCR result obtained"
             
     except Exception as e:
@@ -316,8 +316,9 @@ def transcribe_image(img: Image.Image, tokenizer, model, cfg: Config) -> str:
         # Clean up temporary file
         try:
             os.remove(temp_image_path)
+            log.debug("Cleaned up temp image file")
         except:
-            pass
+            log.debug("Could not clean up temp image file")
 
 def check_output_files(output_path: str, image_path: str) -> str:
     """Check output directory for .mmd files specifically"""
