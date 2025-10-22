@@ -1,5 +1,7 @@
 # markdowner
 
+Capture a screen snippet and convert to markdown with `ctrl+alt+M`. Paste with `ctrl+v`.
+
 Convert screenshots to Markdown using a local AI model with just a few hotkeys.
 
 

@@ -10,12 +10,7 @@ import tkinter as tk
 
 from PIL import ImageGrab, Image
 import torch
-from transformers import (
-    AutoProcessor, AutoModelForCausalLM, AutoModelForVision2Seq,
-    AutoModelForImageTextToText, AutoConfig, BitsAndBytesConfig,
-    PreTrainedModel, ProcessorMixin,
-)
-from pynput.keyboard import GlobalHotKeys
+from transformers import AutoModel, AutoTokenizer
 import pyperclip
 
 
@@ -29,7 +24,7 @@ log.setLevel(logging.INFO)
 
 @dataclass
 class Config:
-    model: str = "Qwen/Qwen2.5-VL-3B-Instruct"
+    model: str = "deepseek-ai/DeepSeek-OCR"
     max_new_tokens: int = 2048
     temp: float = 0.1
     max_side: int = 1920
@@ -41,6 +36,13 @@ class Config:
     use_global_hotkeys: bool = True
     debug: bool = False
     use_system_snipping: bool = True
+    # DeepSeek-OCR specific settings
+    base_size: int = 1024
+    image_size: int = 640
+    crop_mode: bool = True
+    test_compress: bool = True
+    output_path: str = "ocr_output"
+    use_flash_attention: bool = False
 
 
 def load_config(path: str = "config.json") -> Config:
@@ -60,7 +62,7 @@ def load_config(path: str = "config.json") -> Config:
         cfg.system_prompt = open(spath, "r", encoding="utf-8").read().strip()
     except Exception as e:
         log.warning("No system prompt at %s (%s); using fallback.", spath, e)
-        cfg.system_prompt = "You are an OCR-to-Markdown transcriber. Output only Markdown."
+        cfg.system_prompt = "<|grounding|>Convert the document to markdown."
 
     if os.getenv("MARKDOWNER_DEBUG"):
         cfg.debug = True
@@ -223,51 +225,176 @@ def copy_to_clipboard(text: str) -> None:
     pyperclip.copy(text)
 
 
-def load_model_and_processor(cfg: Config) -> tuple[ProcessorMixin, PreTrainedModel]:
-    dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    kwargs = {"torch_dtype": dtype, "device_map": "auto", "low_cpu_mem_usage": True, "trust_remote_code": True}
-    if cfg.load_4bit:
-        kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+def load_model_and_processor(cfg: Config):
+    """Load DeepSeek-OCR model exactly like the working example"""
+    log.info(f"Loading DeepSeek-OCR model: {cfg.model}")
+    
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(cfg.model, trust_remote_code=True)
+        model = AutoModel.from_pretrained(
+            cfg.model, 
+            _attn_implementation="eager", # 'flash_attention_2', 
+            trust_remote_code=True, 
+            use_safetensors=True
         )
-    processor = AutoProcessor.from_pretrained(cfg.model, trust_remote_code=True, use_fast=True)
-    mcfg = AutoConfig.from_pretrained(cfg.model, trust_remote_code=True)
-    is_vl = (getattr(mcfg, "model_type", "") or "").lower().find("vl") >= 0 or hasattr(mcfg, "vision_config")
-    if is_vl:
-        try:
-            model = AutoModelForImageTextToText.from_pretrained(cfg.model, **kwargs)
-        except Exception:
-            model = AutoModelForVision2Seq.from_pretrained(cfg.model, **kwargs)
-    else:
-        model = AutoModelForCausalLM.from_pretrained(cfg.model, **kwargs)
-    model.eval()
-    return processor, model
+        
+        # Set device and dtype exactly like working example
+        if torch.cuda.is_available():
+            model = model.eval().cuda().to(torch.bfloat16)
+            log.info("Using CUDA with bfloat16 and flash_attention_2")
+        else:
+            model = model.eval().to(torch.float32)
+            log.info("Using CPU with float32")
+        
+        log.info("DeepSeek-OCR model loaded successfully")
+        return tokenizer, model
+        
+    except Exception as e:
+        log.error(f"Failed to load DeepSeek-OCR model: {e}")
+        raise
 
 
-def build_messages(img: Image.Image, cfg: Config):
-    return [
-        {"role": "system", "content": cfg.system_prompt},
-        {"role": "user", "content": [{"type": "image", "image": img},
-                                     {"type": "text", "text": "Transcribe this image to Markdown. Output only Markdown."}]},
-    ]
+def save_temp_image(img: Image.Image) -> str:
+    """Save image to temporary file for DeepSeek-OCR processing"""
+    import tempfile
+    temp_dir = "temp_ocr"
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, f"capture_{int(time.time())}.png")
+    img.save(temp_path, "PNG")
+    return temp_path
 
 
-def transcribe_image(img: Image.Image, processor: ProcessorMixin, model: PreTrainedModel, cfg: Config) -> str:
+def transcribe_image(img: Image.Image, tokenizer, model, cfg: Config) -> str:
+    """Transcribe image using DeepSeek-OCR following the working example"""
     img = preprocess(img, cfg.max_side)
-    msgs = build_messages(img, cfg)
-    text = processor.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
-    inputs = processor(text=[text], images=[img], return_tensors="pt").to(model.device)
-    gen_kwargs = {"max_new_tokens": cfg.max_new_tokens, "temperature": cfg.temp, "do_sample": cfg.temp > 0}
-    with torch.inference_mode():
-        out = model.generate(**inputs, **gen_kwargs)
-    new_ids = out[:, inputs["input_ids"].shape[1]:]
-    md = processor.batch_decode(new_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
-    return md
+    
+    # Save image to temporary file
+    temp_image_path = save_temp_image(img)
+    
+    try:
+        # Use the exact same parameters as your working example
+        prompt = "<image>\n<|grounding|>Convert the document to markdown. "
+        
+        log.debug("Starting OCR inference with working parameters...")
+        
+        # Create output directory
+        os.makedirs(cfg.output_path, exist_ok=True)
+        
+        # Run inference with the exact same parameters that work
+        res = model.infer(
+            tokenizer,
+            prompt=prompt,
+            image_file=temp_image_path,
+            output_path=cfg.output_path,
+            base_size=1024,
+            image_size=640, 
+            crop_mode=True,
+            save_results=True,
+            test_compress=True
+        )
+        
+        # The infer method returns the result directly in your working example
+        if res is not None:
+            if isinstance(res, str):
+                return res.strip()
+            elif isinstance(res, (list, tuple)) and len(res) > 0:
+                return str(res[0]).strip()
+        
+        # If res is None, check if there are output files
+        log.debug("Checking for output files...")
+        markdown_text = check_output_files(cfg.output_path, temp_image_path)
+        if markdown_text:
+            return markdown_text
+            
+        log.warning("No result returned from infer method")
+        return "No OCR result obtained"
+            
+    except Exception as e:
+        log.error(f"OCR inference failed: {e}")
+        return f"Error during OCR: {str(e)}"
+    finally:
+        # Clean up temporary file
+        try:
+            os.remove(temp_image_path)
+        except:
+            pass
+
+def check_output_files(output_path: str, image_path: str) -> str:
+    """Check output directory for .mmd files specifically"""
+    try:
+        log.debug(f"Searching for MMD files in: {output_path}")
+        
+        # Search for all .mmd files recursively
+        mmd_files = []
+        for root, dirs, files in os.walk(output_path):
+            for file in files:
+                if file.endswith('.mmd'):
+                    mmd_files.append(os.path.join(root, file))
+        
+        log.debug(f"Found MMD files: {mmd_files}")
+        
+        # Read the most recently modified .mmd file
+        if mmd_files:
+            # Sort by modification time, newest first
+            mmd_files.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+            latest_mmd = mmd_files[0]
+            log.debug(f"Reading latest MMD file: {latest_mmd}")
+            
+            with open(latest_mmd, 'r', encoding='utf-8') as f:
+                content = f.read().strip()
+                if content:
+                    log.debug(f"Found content in {latest_mmd}: {content[:500]}...")
+                    return content
+                else:
+                    log.debug("MMD file is empty")
+        
+        # Fallback: look for any text files
+        log.debug("No MMD files found, searching for any text files...")
+        for root, dirs, files in os.walk(output_path):
+            for file in files:
+                if file.endswith(('.txt', '.md', '.markdown')):
+                    file_path = os.path.join(root, file)
+                    log.debug(f"Reading text file: {file_path}")
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read().strip()
+                        if content:
+                            log.debug(f"Found content in {file_path}: {content[:500]}...")
+                            return content
+                            
+    except Exception as e:
+        log.error(f"Error checking output files: {e}")
+    
+    return ""
 
 
-def capture_then_transcribe(processor: ProcessorMixin, model: PreTrainedModel, cfg: Config) -> str | None:
+
+def cleanup_old_outputs(output_path: str, keep_recent: int = 3):
+    """Clean up old output directories, keeping only the most recent ones"""
+    try:
+        if not os.path.exists(output_path):
+            return
+            
+        # Find all result_* directories
+        result_dirs = []
+        for item in os.listdir(output_path):
+            item_path = os.path.join(output_path, item)
+            if os.path.isdir(item_path) and item.startswith('result_'):
+                result_dirs.append((item_path, os.path.getmtime(item_path)))
+        
+        # Sort by modification time, newest first
+        result_dirs.sort(key=lambda x: x[1], reverse=True)
+        
+        # Remove old directories (keep only the most recent ones)
+        for dir_path, _ in result_dirs[keep_recent:]:
+            import shutil
+            shutil.rmtree(dir_path)
+            log.debug(f"Cleaned up old output: {dir_path}")
+            
+    except Exception as e:
+        log.debug(f"Could not clean up old outputs: {e}")
+
+
+def capture_then_transcribe(tokenizer: AutoTokenizer, model: AutoModel, cfg: Config) -> str | None:
     """Invoke a snipping tool, wait for the clipboard image (or fallback selector), transcribe, return Markdown."""
     if not cfg.use_system_snipping:
         log.info("Using built-in selector (system snipping disabled).")
@@ -275,7 +402,7 @@ def capture_then_transcribe(processor: ProcessorMixin, model: PreTrainedModel, c
         if img is None:
             log.warning("Screenshot cancelled or unavailable.")
             return None
-        return transcribe_image(img, processor, model, cfg)
+        return transcribe_image(img, tokenizer, model, cfg)
     
     invoked = invoke_system_snipping()
     img: Image.Image | None = None
@@ -288,15 +415,15 @@ def capture_then_transcribe(processor: ProcessorMixin, model: PreTrainedModel, c
     if img is None:
         log.warning("Screenshot cancelled or unavailable.")
         return None
-    return transcribe_image(img, processor, model, cfg)
+    return transcribe_image(img, tokenizer, model, cfg)
 
 
 class HotkeyApp:
-    def __init__(self, processor: ProcessorMixin, model: PreTrainedModel, config: Config):
-        self.processor = processor
+    def __init__(self, tokenizer: AutoTokenizer, model: AutoModel, config: Config):
+        self.tokenizer = tokenizer
         self.model = model
         self.config = config
-        self.listener: GlobalHotKeys | None = None
+        self.listener = None
         self._busy = threading.Lock()
 
     def on_ocr(self) -> None:
@@ -308,7 +435,7 @@ class HotkeyApp:
         def worker():
             with self._busy:
                 try:
-                    markdown = capture_then_transcribe(self.processor, self.model, self.config)
+                    markdown = capture_then_transcribe(self.tokenizer, self.model, self.config)
                     if markdown:
                         copy_to_clipboard(markdown)
                         log.info("Copied Markdown to clipboard.")
@@ -328,6 +455,8 @@ class HotkeyApp:
 
     def run(self) -> None:
         log.info(f"Ready. Press {self.config.hotkey_ocr} to OCR; {self.config.hotkey_quit} to quit.")
+        from pynput.keyboard import GlobalHotKeys
+        
         hotkeys = {
             self.to_spec(self.config.hotkey_ocr): self.on_ocr,
             self.to_spec(self.config.hotkey_quit): self.on_quit,
@@ -339,11 +468,10 @@ class HotkeyApp:
 
 def main():
     cfg = load_config("config.json")
-    processor, model = load_model_and_processor(cfg)
-    app = HotkeyApp(processor, model, cfg)
+    tokenizer, model = load_model_and_processor(cfg)
+    app = HotkeyApp(tokenizer, model, cfg)
     app.run()
 
 
 if __name__ == "__main__":
     main()
-    
