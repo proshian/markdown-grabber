@@ -1,6 +1,6 @@
 # markdowner
 
-Capture a screen snippet and convert to markdown with `ctrl+alt+M`. Paste with `ctrl+v`.
+Capture a screen snippet and convert to markdown with `ctrl+alt+S`. Paste with `ctrl+v`.
 
 Convert screenshots to Markdown using a local AI model with just a few hotkeys.
 
@@ -26,11 +26,13 @@ You can also launch the script via a shortcut. For example, on Windows:
 3. Launch with `Ctrl + Alt + L`. Stop with `Ctrl + Alt + Q`.
 
 ## Hotkey cycle
-1. `Shift + Shift + M` → capture area, convert to Markdown and push to clipboard
+1. `Ctrl + Alt + S` → capture area, convert to Markdown and push to clipboard
 2. `Ctrl + V` → paste  (Though we recommend `Win + V --> Enter` to easily detect the moment the text appears in the clipboard. Note that `Win + V` works only on Windows 10/11 and requires enabling clipboard history in Windows settings.)
 
 Stop the loop with `Ctrl + Alt + Q`.
 
+>[!Tip]
+> The hotkeys can be adjusted in `config.json`
 
 # TODO
 - [ ] Check support for Linux and MacOS
