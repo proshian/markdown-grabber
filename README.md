@@ -1,39 +1,49 @@
-# markdowner
+# Markdowner - Screenshot to Markdown with DeepSeek OCR
 
-Capture a screen snippet and convert to markdown with `ctrl+alt+S`. Paste with `ctrl+v`.
+OCR app powered by DeepSeek-OCR that allows you to convert anything to markdown with just a single hotkey
 
-Convert screenshots to Markdown using a local AI model with just a few hotkeys.
+![Demo GIF](demo.gif)
 
+## 🚀 What Does It Do?
 
-## Setup
-Set up a virtual environment and install dependencies:
+**Simple workflow:**
+1. Press `Ctrl + Alt + C` → Select screen area
+2. DeepSeek-OCR converts image to markdown automatically  
+3. Press `Ctrl + V` → Paste the text anywhere
 
-```sh
-pip install uv  
+**Perfect for:**
+- 📝 Extracting text from documentation
+- 🧮 Converting math formulas to LaTeX
+- 📊 Turning tables into markdown
+- 💻 Copying code snippets from images
+
+## ⚡ Quick Start
+
+```bash
+pip install uv
 uv sync
+uv run markdowner.py
 ```
 
-There are other ways to install uv, see [documentation](https://docs.astral.sh/uv/getting-started/installation/).
+> There are other ways to install uv, see [documentation](https://docs.astral.sh/uv/getting-started/installation/).
 
-## Quick Start
-
-Run with `uv run markdowner.py`
-
-You can also launch the script via a shortcut. For example, on Windows:
-
-1. Create a shortcut to `markdowner_looped.bat`.
-2. In the shortcut properties set Shortcut key: `Ctrl + Alt + L`.
-3. Launch with `Ctrl + Alt + L`. Stop with `Ctrl + Alt + Q`.
-
-## Hotkey cycle
-1. `Ctrl + Alt + S` → capture area, convert to Markdown and push to clipboard
-2. `Ctrl + V` → paste  (Though we recommend `Win + V --> Enter` to easily detect the moment the text appears in the clipboard. Note that `Win + V` works only on Windows 10/11 and requires enabling clipboard history in Windows settings.)
-
-Stop the loop with `Ctrl + Alt + Q`.
+**Hotkeys:**
+- `Ctrl + Alt + C` - Capture screen area → markdown
+- `Ctrl + V` - Paste the converted text
+- `Ctrl + Alt + Q` - Quit the app
 
 >[!Tip]
 > The hotkeys can be adjusted in `config.json`
 
-# TODO
-- [ ] Check support for Linux and MacOS
-- [ ] If possible make it so that if the loop is not running you press Ctrl + Alt + M to start the loop and start the task. So that there's no Ctrl + Alt + L step.
+>[!Tip]
+> You can also create a shortcut to launch the app itself.
+>
+> For example, to do so on Windows:
+>
+> 1. Create a shortcut to `markdowner_looped.bat`.
+> 2. In the shortcut properties set Shortcut key: `Ctrl + Alt + L`.
+> 3. Launch with `Ctrl + Alt + L`. Stop with `Ctrl + Alt + Q`.
+
+## Why I build this?
+
+Without this app I used to go to an AI assistant to parse the long screenshots and for short formulas I used to type them myself. It was time-consuming and frustrating. Now it's literally "copy and paste".
