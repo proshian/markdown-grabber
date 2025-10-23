@@ -4,6 +4,14 @@ DeepSeek-OCR-powered snapping tool that gives you text instead of images
 
 ![markdowner_demo](https://github.com/user-attachments/assets/5c8e2eec-4b92-4fbc-936f-1296cb7daf45)
 
+
+## It's finally here :)
+
+This tool was born from my own workflow—I kept taking screenshots and pasting them into DeepSeek's website for markdown conversion. I built an initial version with other VLLMs to avoid the disruption, but the accuracy wasn't perfect. I was hoping DeepSeek would open-source their superior OCR
+
+The day I learned they released it, I integrated it. Now the app works flawlessly, and I don't need to leave my workspace
+
+
 ## 🚀 How It Works
 
 **Simple workflow:**
@@ -18,7 +26,7 @@ DeepSeek-OCR-powered snapping tool that gives you text instead of images
 - 💻 Copying code snippets from images or videos
 - 📋 Digitizing printed text or handwritten notes
 
-## ⚡ Get Started
+## Get Started
 
 ```bash
 pip install uv
