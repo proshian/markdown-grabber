@@ -2,7 +2,7 @@
   "model": "deepseek-ai/DeepSeek-OCR",
   "max_side": 1920,
   "prompt_path": "prompt.txt",
-  "hotkey_ocr": "<ctrl>+<alt>+s",
+  "hotkey_ocr": "<ctrl>+<alt>+c",
   "hotkey_quit": "<ctrl>+<alt>+q",
   "debug": false,
   "base_size": 1024,
