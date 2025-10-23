@@ -4,7 +4,7 @@
   "temp": 0.1,
   "max_side": 1920,
   "load_4bit": false,
-  "system_prompt_path": "system_prompt.txt",
+  "prompt_path": "prompt.txt",
   "hotkey_ocr": "ctrl+alt+m",
   "hotkey_quit": "ctrl+alt+q",
   "use_global_hotkeys": true,
@@ -15,5 +15,6 @@
   "test_compress": true,
   "output_path": "ocr_output",
   "use_system_snipping": false,
-  "use_flash_attention": false
+  "use_flash_attention": false,
+  "use_dollars_for_math": true
 }
