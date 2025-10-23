@@ -1,172 +1,197 @@
-import os
 import json
 import logging
-from dataclasses import dataclass
+import threading
+import tempfile
+from pathlib import Path
+import re
 
-from PIL import ImageGrab, Image
+import tkinter as tk
+from PIL import Image
 import torch
-from transformers import (
-    AutoProcessor, AutoModelForCausalLM, AutoModelForVision2Seq,
-    AutoModelForImageTextToText, AutoConfig, BitsAndBytesConfig,
-    PreTrainedModel, ProcessorMixin,
-)
+from transformers import AutoModel, AutoTokenizer
 from pynput.keyboard import GlobalHotKeys
-import pyperclip
+
+from region_selector import RegionSelector
 
 
-log = logging.getLogger("markdowner")
-if not log.handlers:
-    h = logging.StreamHandler()
-    h.setFormatter(logging.Formatter("[markdowner] %(levelname)s: %(message)s"))
-    log.addHandler(h)
-log.setLevel(logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="[markdowner] %(levelname)s: %(message)s"
+)
+log = logging.getLogger(__name__)
 
 
-@dataclass
-class Config:
-    model: str = "Qwen/Qwen2.5-VL-3B-Instruct"
-    max_new_tokens: int = 2048
-    temp: float = 0.1
-    max_side: int = 1920
-    load_4bit: bool = False
-    system_prompt_path: str = "system_prompt.txt"
-    system_prompt: str = ""
-    hotkey_ocr: str = "ctrl+alt+m"
-    hotkey_quit: str = "ctrl+alt+q"
-    use_global_hotkeys: bool = True
-    debug: bool = False
+def load_config(config_path: str = "config.json") -> dict:
+    with open(config_path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
-def load_config(path: str = "config.json") -> Config:
-    cfg = Config()
-    try:
-        data = json.load(open(path, "r", encoding="utf-8"))
-        for k, v in data.items():
-            if hasattr(cfg, k) and v is not None:
-                setattr(cfg, k, v)
-    except Exception as e:
-        log.warning("Using defaults; failed to read %s: %s", path, e)
-
-    spath = cfg.system_prompt_path
-    if not os.path.isabs(spath):
-        spath = os.path.join(os.path.dirname(path), spath)
-    try:
-        cfg.system_prompt = open(spath, "r", encoding="utf-8").read().strip()
-    except Exception as e:
-        log.warning("No system prompt at %s (%s); using fallback.", spath, e)
-        cfg.system_prompt = "You are an OCR-to-Markdown transcriber. Output only Markdown."
-
-    if os.getenv("MARKDOWNER_DEBUG"):
-        cfg.debug = True
-    log.setLevel(logging.DEBUG if cfg.debug else logging.INFO)
-    log.info(f"Hotkeys -> OCR: {cfg.hotkey_ocr} | Quit: {cfg.hotkey_quit}")
-    return cfg
-
-
-def get_clipboard_image() -> Image.Image | None:
-    data = ImageGrab.grabclipboard()
-    if isinstance(data, Image.Image):
-        return data
-    if isinstance(data, list) and data:
-        try:
-            return Image.open(data[0])
-        except Exception:
-            return None
-    return None
-
-
-def preprocess(img: Image.Image, max_side: int) -> Image.Image:
+def preprocess_image(img: Image.Image, max_side: int) -> Image.Image:
+    """Resize image if too large."""
     if img.mode not in ("RGB", "RGBA"):
         img = img.convert("RGB")
+    
     if max(img.size) > max_side > 0:
-        s = max_side / max(img.size)
-        img = img.resize((max(1, int(img.width * s)), max(1, int(img.height * s))), Image.BICUBIC)
+        scale = max_side / max(img.size)
+        new_size = (
+            max(1, int(img.width * scale)),
+            max(1, int(img.height * scale))
+        )
+        img = img.resize(new_size, Image.BICUBIC)
+    
     return img
 
 
-def copy_to_clipboard(text: str) -> None:
-    pyperclip.copy(text)
-
-
-def load_model_and_processor(cfg: Config) -> tuple[ProcessorMixin, PreTrainedModel]:
-    dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-    kwargs = {"torch_dtype": dtype, "device_map": "auto", "low_cpu_mem_usage": True, "trust_remote_code": True}
-    if cfg.load_4bit:
-        kwargs["quantization_config"] = BitsAndBytesConfig(
-            load_in_4bit=True, bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-        )
-    processor = AutoProcessor.from_pretrained(cfg.model, trust_remote_code=True, use_fast=True)
-    mcfg = AutoConfig.from_pretrained(cfg.model, trust_remote_code=True)
-    is_vl = (getattr(mcfg, "model_type", "") or "").lower().find("vl") >= 0 or hasattr(mcfg, "vision_config")
-    if is_vl:
-        try:
-            model = AutoModelForImageTextToText.from_pretrained(cfg.model, **kwargs)
-        except Exception:
-            model = AutoModelForVision2Seq.from_pretrained(cfg.model, **kwargs)
+def load_ocr_model(cfg: dict):
+    """Load DeepSeek-OCR model."""
+    model_name = cfg["model"]
+    log.info(f"Loading model: {model_name}")
+    
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    model = AutoModel.from_pretrained(
+        model_name, 
+        trust_remote_code=True, 
+        use_safetensors=True
+    )
+    
+    if torch.cuda.is_available():
+        model = model.eval().cuda().to(torch.bfloat16)
+        log.info("Using CUDA with bfloat16")
     else:
-        model = AutoModelForCausalLM.from_pretrained(cfg.model, **kwargs)
-    model.eval()
-    return processor, model
+        model = model.eval().to(torch.float32)
+        log.info("Using CPU with float32")
+    
+    return tokenizer, model
 
 
-def build_messages(img: Image.Image, cfg: Config):
-    return [
-        {"role": "system", "content": cfg.system_prompt},
-        {"role": "user", "content": [{"type": "image", "image": img},
-                                     {"type": "text", "text": "Transcribe this image to Markdown. Output only Markdown."}]},
-    ]
+def copy_to_clipboard(text: str) -> None:
+    """Copy text to clipboard using tkinter."""
+    root = tk.Tk()
+    root.withdraw()
+    root.clipboard_clear()
+    root.clipboard_append(text)
+    root.update()
+    root.destroy()
 
 
-def transcribe_clipboard_image(processor: ProcessorMixin, model: PreTrainedModel, cfg: Config) -> str | None:
-    img = get_clipboard_image()
-    if not img:
-        log.warning("No image on clipboard. Use Win+Shift+S first.")
-        return None
-    img = preprocess(img, cfg.max_side)
-    msgs = build_messages(img, cfg)
-    text = processor.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
-    inputs = processor(text=[text], images=[img], return_tensors="pt").to(model.device)
-    gen_kwargs = {"max_new_tokens": cfg.max_new_tokens, "temperature": cfg.temp, "do_sample": cfg.temp > 0}
-    with torch.inference_mode():
-        out = model.generate(**inputs, **gen_kwargs)
-    new_ids = out[:, inputs["input_ids"].shape[1]:]
-    md = processor.batch_decode(new_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0].strip()
-    return md
+def convert_math_delimiters(text):
+    """Convert LaTeX-style math delimiters to dollar signs with regex."""
+    text = re.sub(r'\\\(\s*', '$', text)   # \( --> $
+    text = re.sub(r'\s*\\\)', '$', text)   # (\ --> $
+    text = re.sub(r'\\\[\s*', '$$', text)  # \[ --> $$
+    text = re.sub(r'\s*\\\]', '$$', text)  # \] --> $$
+    return text
 
 
-class HotkeyApp:
-    def __init__(self, processor: ProcessorMixin, model: PreTrainedModel, config: Config):
-        self.processor = processor
+def get_prompt(cfg: dict) -> str:
+    with open(cfg["prompt_path"], "r", encoding="utf-8") as f:
+        return f.read()
+
+
+def transcribe_image(img: Image.Image, tokenizer: AutoTokenizer, model: AutoModel, cfg: dict) -> str:
+    """Transcribe image to markdown using direct model inference."""
+    max_side = cfg["max_side"]
+    img = preprocess_image(img, max_side)
+    
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_img_path = Path(temp_dir) / "input.png"
+            img.save(temp_img_path, "PNG")
+
+            # Run OCR inference
+            # model.infer always outputs None. Even when save = False.
+            model.infer(
+                tokenizer,
+                prompt=f"<image>\n<|grounding|>{get_prompt(cfg)}",
+                image_file=temp_img_path,
+                output_path=temp_dir,
+                base_size=cfg["base_size"],
+                image_size=cfg["image_size"],
+                crop_mode=cfg["crop_mode"],
+                save_results=True,
+                test_compress=cfg["test_compress"]
+            )
+            
+            result = extract_markdown_from_temp(temp_dir)
+
+            if cfg["use_dollars_for_math"]:
+                result = convert_math_delimiters(result)
+            return result
+            
+    except Exception as e:
+        log.error("OCR inference failed: %s", e)
+        return f"Error during OCR: {str(e)}"
+
+
+def extract_markdown_from_temp(temp_dir: str) -> str:
+    """Extract markdown text from temporary output directory."""
+    try:
+        temp_path = Path(temp_dir)
+        
+        # Look for any text files in the temp directory
+        for ext in ('.mmd', '.txt', '.md', '.markdown'):
+            for text_file in temp_path.rglob(f"*{ext}"):
+                content = text_file.read_text(encoding="utf-8").strip()
+                if content:
+                    log.debug("Found markdown content: %.500s...", content)
+                    return content
+        
+        # Check if there are any files at all in the temp directory
+        all_files = list(temp_path.rglob("*"))
+        if all_files:
+            log.debug("Found files in temp dir: %s", [f.name for f in all_files])
+        
+    except Exception as e:
+        log.error("Error extracting markdown from temp dir: %s", e)
+    
+    return "No OCR result obtained"
+
+
+class OCRHotkeyApp:
+    """Main application handling hotkeys and OCR processing."""
+    
+    def __init__(self, tokenizer: AutoTokenizer, model: AutoModel, config: dict):
+        self.tokenizer = tokenizer
         self.model = model
         self.config = config
-        self.listener: GlobalHotKeys | None = None
+        self.listener = None
+        self._busy = threading.Lock()
 
-    def on_ocr(self) -> None:
-        try:
-            markdown = transcribe_clipboard_image(self.processor, self.model, self.config)
-            if markdown:
-                copy_to_clipboard(markdown)
-                log.info("Copied Markdown to clipboard.")
-        except Exception as exc:
-            log.exception("Transcription error: %s", exc)
-
-    def on_quit(self) -> None:
-        log.info("Exiting on hotkey.")
+    def on_ocr(self):
+        if self._busy.locked():
+            log.info("Already processing a capture")
+            return
+        
+        def process_ocr():
+            with self._busy:
+                try:
+                    img = RegionSelector().select()
+                    if img is None:
+                        log.warning("Failed to capture image")
+                        return
+                    markdown = transcribe_image(
+                        img, self.tokenizer, self.model, self.config)
+                    copy_to_clipboard(markdown)
+                    log.info("Copied Markdown to clipboard")
+                
+                except Exception as e:
+                    log.exception("Transcription error: %s", e)
+        
+        threading.Thread(target=process_ocr, daemon=True).start()
+    
+    def on_quit(self):
+        log.info("Exiting on hotkey")
         if self.listener:
             self.listener.stop()
-
-    def to_spec(self, combo: str) -> str:
-        mapping = {"ctrl": "<ctrl>", "alt": "<alt>", "shift": "<shift>", "win": "<cmd>", "cmd": "<cmd>"}
-        return "+".join(mapping.get(part, part) for part in (x.strip().lower() for x in combo.split("+")) if part)
-
-    def run(self) -> None:
-        log.info(f"Ready. Press {self.config.hotkey_ocr} to OCR; {self.config.hotkey_quit} to quit.")
+    
+    def run(self):
+        log.info(f"Ready. Press {self.config["hotkey_ocr"]} to OCR; {self.config["hotkey_quit"]} to quit")
+                
         hotkeys = {
-            self.to_spec(self.config.hotkey_ocr): self.on_ocr,
-            self.to_spec(self.config.hotkey_quit): self.on_quit,
+            self.config["hotkey_ocr"]: self.on_ocr,
+            self.config["hotkey_quit"]: self.on_quit,
         }
+        
         with GlobalHotKeys(hotkeys) as listener:
             self.listener = listener
             listener.join()
@@ -174,11 +199,12 @@ class HotkeyApp:
 
 def main():
     cfg = load_config("config.json")
-    processor, model = load_model_and_processor(cfg)
-    app = HotkeyApp(processor, model, cfg)
+    if cfg["debug"]:
+        logging.getLogger().setLevel(logging.DEBUG)
+    tokenizer, model = load_ocr_model(cfg)
+    app = OCRHotkeyApp(tokenizer, model, cfg)
     app.run()
 
 
 if __name__ == "__main__":
     main()
-    

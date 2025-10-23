@@ -1,12 +1,13 @@
 {
-  "model": "Qwen/Qwen2.5-VL-3B-Instruct",
-  "max_new_tokens": 2048,
-  "temp": 0.1,
+  "model": "deepseek-ai/DeepSeek-OCR",
   "max_side": 1920,
-  "load_4bit": false,
-  "system_prompt_path": "system_prompt.txt",
-  "hotkey_ocr": "ctrl+alt+m",
-  "hotkey_quit": "ctrl+alt+q",
-  "use_global_hotkeys": true,
-  "debug": false
+  "prompt_path": "prompt.txt",
+  "hotkey_ocr": "<ctrl>+<alt>+s",
+  "hotkey_quit": "<ctrl>+<alt>+q",
+  "debug": false,
+  "base_size": 1024,
+  "image_size": 640,
+  "crop_mode": true,
+  "test_compress": true,
+  "use_dollars_for_math": true
 }
