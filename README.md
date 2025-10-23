@@ -1,8 +1,10 @@
-# Markdowner - Screenshot to Markdown with DeepSeek OCR
+Markdowner - Screenshot to Markdown with DeepSeek OCR
 
-OCR app powered by DeepSeek-OCR that allows you to convert anything to markdown with just a single hotkey
+The snapping tool that gives you text instead of images. Powered by DeepSeek OCR for exceptional accuracy on text, code, and math.
 
-![Demo GIF](demo.gif)
+![Markdowner demo](https://github.com/user-attachments/assets/f6bef1fe-d50a-4604-a76a-1d1b0069dedb)
+
+
 
 ## 🚀 What Does It Do?
 
@@ -44,6 +46,21 @@ uv run markdowner.py
 > 2. In the shortcut properties set Shortcut key: `Ctrl + Alt + L`.
 > 3. Launch with `Ctrl + Alt + L`. Stop with `Ctrl + Alt + Q`.
 
-## Why I build this?
 
-Without this app I used to go to an AI assistant to parse the long screenshots and for short formulas I used to type them myself. It was time-consuming and frustrating. Now it's literally "copy and paste".
+## Seamless Workflow Integration
+
+I wanted to eliminate the constant context switching when working with text from images. The old process was always disruptive:
+
+**Before:**
+- Switch away from your current app
+- Open a browser or another tool  
+- Upload the screenshot
+- Wait for processing
+- Copy the results back
+- Return to your original work
+
+**Now:**
+- Press `Ctrl + Alt + C` → select area
+- Press `Ctrl + V` → use the text
+
+The key is that you never leave your workspace. No switching windows, no waiting for external tools - just capture and continue working. The tool stays out of your way while handling the conversion automatically.
