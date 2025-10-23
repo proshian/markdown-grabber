@@ -1,8 +1,8 @@
 # Markdowner - Screenshot to Markdown with DeepSeek OCR
 
-The snapping tool that gives you text instead of images. Powered by DeepSeek OCR for exceptional accuracy on text, code, and math.
+DeepSeek-OCR-powered snapping tool that gives you text instead of images
 
-![Markdowner demo](https://github.com/user-attachments/assets/f6bef1fe-d50a-4604-a76a-1d1b0069dedb)
+![markdowner_demo](https://github.com/user-attachments/assets/5c8e2eec-4b92-4fbc-936f-1296cb7daf45)
 
 ## 🚀 How It Works
 
