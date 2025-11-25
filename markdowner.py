@@ -8,8 +8,9 @@ import re
 import tkinter as tk
 from PIL import Image
 import torch
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoProcessor, HunYuanVLForConditionalGeneration
 from pynput.keyboard import GlobalHotKeys
+import pyperclip
 
 from region_selector import RegionSelector
 
@@ -43,35 +44,28 @@ def preprocess_image(img: Image.Image, max_side: int) -> Image.Image:
 
 
 def load_ocr_model(cfg: dict):
-    """Load DeepSeek-OCR model."""
+    """Load HunyuanOCR model."""
     model_name = cfg["model"]
     log.info(f"Loading model: {model_name}")
     
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-    model = AutoModel.from_pretrained(
-        model_name, 
-        trust_remote_code=True, 
-        use_safetensors=True
+    processor = AutoProcessor.from_pretrained(model_name, use_fast=False)
+    model = HunYuanVLForConditionalGeneration.from_pretrained(
+        model_name,
+        attn_implementation="eager",
+        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+        device_map="auto" if torch.cuda.is_available() else None
     )
     
     if torch.cuda.is_available():
-        model = model.eval().cuda().to(torch.bfloat16)
         log.info("Using CUDA with bfloat16")
     else:
-        model = model.eval().to(torch.float32)
         log.info("Using CPU with float32")
     
-    return tokenizer, model
+    return processor, model
 
 
 def copy_to_clipboard(text: str) -> None:
-    """Copy text to clipboard using tkinter."""
-    root = tk.Tk()
-    root.withdraw()
-    root.clipboard_clear()
-    root.clipboard_append(text)
-    root.update()
-    root.destroy()
+    pyperclip.copy(text)
 
 
 def convert_math_delimiters(text):
@@ -88,7 +82,7 @@ def get_prompt(cfg: dict) -> str:
         return f.read()
 
 
-def transcribe_image(img: Image.Image, tokenizer: AutoTokenizer, model: AutoModel, cfg: dict) -> str:
+def transcribe_image(img: Image.Image, processor: AutoProcessor, model: HunYuanVLForConditionalGeneration, cfg: dict) -> str:
     """Transcribe image to markdown using direct model inference."""
     max_side = cfg["max_side"]
     img = preprocess_image(img, max_side)
@@ -97,22 +91,50 @@ def transcribe_image(img: Image.Image, tokenizer: AutoTokenizer, model: AutoMode
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_img_path = Path(temp_dir) / "input.png"
             img.save(temp_img_path, "PNG")
-
-            # Run OCR inference
-            # model.infer always outputs None. Even when save = False.
-            model.infer(
-                tokenizer,
-                prompt=f"<image>\n<|grounding|>{get_prompt(cfg)}",
-                image_file=temp_img_path,
-                output_path=temp_dir,
-                base_size=cfg["base_size"],
-                image_size=cfg["image_size"],
-                crop_mode=cfg["crop_mode"],
-                save_results=True,
-                test_compress=cfg["test_compress"]
+            
+            prompt_text = get_prompt(cfg)
+            
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image", "image": str(temp_img_path)},
+                        {"type": "text", "text": prompt_text},
+                    ],
+                }
+            ]
+            
+            texts = [
+                processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            ]
+            
+            inputs = processor(
+                text=texts,
+                images=[img],
+                padding=True,
+                return_tensors="pt",
             )
             
-            result = extract_markdown_from_temp(temp_dir)
+            device = next(model.parameters()).device
+            inputs = inputs.to(device)
+            
+            with torch.no_grad():
+                generated_ids = model.generate(**inputs, max_new_tokens=16384, do_sample=False)
+                
+            if "input_ids" in inputs:
+                input_ids = inputs.input_ids
+            else:
+                input_ids = inputs.inputs
+                
+            generated_ids_trimmed = [
+                out_ids[len(in_ids):] for in_ids, out_ids in zip(input_ids, generated_ids)
+            ]
+            
+            output_texts = processor.batch_decode(
+                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+            )
+            
+            result = output_texts[0] if output_texts else ""
 
             if cfg["use_dollars_for_math"]:
                 result = convert_math_delimiters(result)
@@ -123,35 +145,11 @@ def transcribe_image(img: Image.Image, tokenizer: AutoTokenizer, model: AutoMode
         return f"Error during OCR: {str(e)}"
 
 
-def extract_markdown_from_temp(temp_dir: str) -> str:
-    """Extract markdown text from temporary output directory."""
-    try:
-        temp_path = Path(temp_dir)
-        
-        # Look for any text files in the temp directory
-        for ext in ('.mmd', '.txt', '.md', '.markdown'):
-            for text_file in temp_path.rglob(f"*{ext}"):
-                content = text_file.read_text(encoding="utf-8").strip()
-                if content:
-                    log.debug("Found markdown content: %.500s...", content)
-                    return content
-        
-        # Check if there are any files at all in the temp directory
-        all_files = list(temp_path.rglob("*"))
-        if all_files:
-            log.debug("Found files in temp dir: %s", [f.name for f in all_files])
-        
-    except Exception as e:
-        log.error("Error extracting markdown from temp dir: %s", e)
-    
-    return "No OCR result obtained"
-
-
 class OCRHotkeyApp:
     """Main application handling hotkeys and OCR processing."""
     
-    def __init__(self, tokenizer: AutoTokenizer, model: AutoModel, config: dict):
-        self.tokenizer = tokenizer
+    def __init__(self, processor: AutoProcessor, model: HunYuanVLForConditionalGeneration, config: dict):
+        self.processor = processor
         self.model = model
         self.config = config
         self.listener = None
@@ -170,7 +168,7 @@ class OCRHotkeyApp:
                         log.warning("Failed to capture image")
                         return
                     markdown = transcribe_image(
-                        img, self.tokenizer, self.model, self.config)
+                        img, self.processor, self.model, self.config)
                     copy_to_clipboard(markdown)
                     log.info("Copied Markdown to clipboard")
                 
@@ -201,8 +199,8 @@ def main():
     cfg = load_config("config.json")
     if cfg["debug"]:
         logging.getLogger().setLevel(logging.DEBUG)
-    tokenizer, model = load_ocr_model(cfg)
-    app = OCRHotkeyApp(tokenizer, model, cfg)
+    processor, model = load_ocr_model(cfg)
+    app = OCRHotkeyApp(processor, model, cfg)
     app.run()
 
 

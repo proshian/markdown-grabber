@@ -1,5 +1,5 @@
 {
-  "model": "deepseek-ai/DeepSeek-OCR",
+  "model": "tencent/HunyuanOCR",
   "max_side": 1920,
   "prompt_path": "prompt.txt",
   "hotkey_ocr": "<ctrl>+<alt>+c",
