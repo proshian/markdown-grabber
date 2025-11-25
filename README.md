@@ -5,24 +5,15 @@ HunyuanOCR-powered screenshot OCR tool that extracts text to your clipboard
 ![markdowner_demo](https://github.com/user-attachments/assets/5c8e2eec-4b92-4fbc-936f-1296cb7daf45)
 
 
-## Evolution to the Perfect OCR
+## Seamless Workflow
 
-This tool was born from my own workflow—I kept taking screenshots and manually converting them to markdown. After testing multiple solutions, I found the ideal balance:
-
-**Journey:**
-1. **Qwen VLM** - Initial attempt, but accuracy wasn't satisfactory
-2. **DeepSeek-OCR** - Excellent accuracy, but too slow and resource-intensive
-3. **HunyuanOCR** - The sweet spot: fast, accurate, and efficient (requires just 6Gb VRAM)
-
-Now the app works flawlessly, and I don't need to leave my workspace
-
+I was tired of being pulled away from my workspace to convert screenshots. This tool is the solution: a simple hotkey (Ctrl+Alt+C) captures any screen area and copies the extracted markdown text directly to my clipboard. Now I can paste instantly and stay focused.
 
 ## 🚀 How It Works
 
 **Simple workflow:**
-1. **Capture** (`Ctrl + Alt + C`) - Select any screen area
-2. HunyuanOCR automatically extracts text as markdown  
-3. **Paste** (`Ctrl + V`) - Use the formatted text anywhere
+- Press `Ctrl + Alt + C` → select a screen area (HunyuanOCR extracts the text in the background and it's copied to the clipboard)
+- Press `Ctrl + V` → paste the text
 
 **Ideal for:**
 - 📝 Extracting text from documentation and articles
@@ -55,19 +46,10 @@ uv run markdowner.py
 > 2. Set shortcut key to `Ctrl + Alt + L` in properties
 > 3. Now you can launch instantly with `Ctrl + Alt + L`
 
-## Seamless Workflow
 
-This app is built to eliminate the constant context switching when extracting text from images. The old workflow was always disruptive:
+## Journey:
+1. **Qwen VLM** - Initial attempt, but accuracy wasn't satisfactory
+2. **DeepSeek-OCR** - Excellent accuracy, but too slow and resource-intensive
+3. **HunyuanOCR** - The sweet spot: fast, accurate, and efficient (requires just 6Gb VRAM)
 
-**Before:**
-- Switch away from your current app
-- Open a browser or external tool
-- Upload screenshots and wait for processing
-- Manually copy results back to your workspace
-- Lose focus and break your workflow
-
-**Now:**
-- Press `Ctrl + Alt + C` → select area
-- Press `Ctrl + V` → text is ready to use
-
-The key advantage: you never leave your workspace. No alt-tabbing, no browser tabs, no context switching. The tool works silently in the background, letting you maintain focus while seamlessly converting images to text right where you need it.
+Now the app works flawlessly, and I don't need to leave my workspace
