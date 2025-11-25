@@ -1,22 +1,27 @@
-# Markdowner - Screenshot to Markdown with DeepSeek OCR
+# Markdowner - Screenshot to Markdown with HunyuanOCR
 
-DeepSeek-OCR-powered snapping tool that gives you text instead of images
+HunyuanOCR-powered screenshot OCR tool that extracts text to your clipboard
 
 ![markdowner_demo](https://github.com/user-attachments/assets/5c8e2eec-4b92-4fbc-936f-1296cb7daf45)
 
 
-## It's finally here :)
+## Evolution to the Perfect OCR
 
-This tool was born from my own workflow—I kept taking screenshots and pasting them into DeepSeek's website for markdown conversion. I built an initial version with other VLLMs to avoid the disruption, but the accuracy wasn't perfect. I was hoping DeepSeek would open-source their superior OCR
+This tool was born from my own workflow—I kept taking screenshots and manually converting them to markdown. After testing multiple solutions, I found the ideal balance:
 
-The day I learned they released it, I integrated it. Now the app works flawlessly, and I don't need to leave my workspace
+**Journey:**
+1. **Qwen VLM** - Initial attempt, but accuracy wasn't satisfactory
+2. **DeepSeek-OCR** - Excellent accuracy, but too slow and resource-intensive
+3. **HunyuanOCR** - The sweet spot: fast, accurate, and efficient (requires just 6Gb VRAM)
+
+Now the app works flawlessly, and I don't need to leave my workspace
 
 
 ## 🚀 How It Works
 
 **Simple workflow:**
 1. **Capture** (`Ctrl + Alt + C`) - Select any screen area
-2. DeepSeek-OCR automatically extracts text as markdown  
+2. HunyuanOCR automatically extracts text as markdown  
 3. **Paste** (`Ctrl + V`) - Use the formatted text anywhere
 
 **Ideal for:**
