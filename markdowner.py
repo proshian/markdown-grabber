@@ -10,6 +10,7 @@ from PIL import Image
 import torch
 from transformers import AutoProcessor, HunYuanVLForConditionalGeneration
 from pynput.keyboard import GlobalHotKeys
+import pyperclip
 
 from region_selector import RegionSelector
 
@@ -64,13 +65,7 @@ def load_ocr_model(cfg: dict):
 
 
 def copy_to_clipboard(text: str) -> None:
-    """Copy text to clipboard using tkinter."""
-    root = tk.Tk()
-    root.withdraw()
-    root.clipboard_clear()
-    root.clipboard_append(text)
-    root.update()
-    root.destroy()
+    pyperclip.copy(text)
 
 
 def convert_math_delimiters(text):
@@ -110,13 +105,12 @@ def transcribe_image(img: Image.Image, processor: AutoProcessor, model: HunYuanV
             ]
             
             texts = [
-                processor.apply_chat_template(msg, tokenize=False, add_generation_prompt=True)
-                for msg in messages
+                processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
             ]
             
             inputs = processor(
                 text=texts,
-                images=img,
+                images=[img],
                 padding=True,
                 return_tensors="pt",
             )
