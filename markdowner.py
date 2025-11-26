@@ -1,11 +1,8 @@
 import json
 import logging
 import threading
-import tempfile
-from pathlib import Path
 import re
 
-import tkinter as tk
 from PIL import Image
 import torch
 from transformers import AutoProcessor, HunYuanVLForConditionalGeneration
@@ -47,20 +44,20 @@ def load_ocr_model(cfg: dict):
     """Load HunyuanOCR model."""
     model_name = cfg["model"]
     log.info(f"Loading model: {model_name}")
+
+    dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
     
     processor = AutoProcessor.from_pretrained(model_name, use_fast=False)
     model = HunYuanVLForConditionalGeneration.from_pretrained(
         model_name,
         attn_implementation="eager",
-        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
+        dtype=dtype,
         device_map="auto" if torch.cuda.is_available() else None
     )
     
-    if torch.cuda.is_available():
-        log.info("Using CUDA with bfloat16")
-    else:
-        log.info("Using CPU with float32")
-    
+    device_str = "CUDA" if model.device.type == "cuda" else "CPU"
+    log.info(f"Using {device_str} with {dtype}")
+
     return processor, model
 
 
@@ -86,59 +83,57 @@ def transcribe_image(img: Image.Image, processor: AutoProcessor, model: HunYuanV
     """Transcribe image to markdown using direct model inference."""
     max_side = cfg["max_side"]
     img = preprocess_image(img, max_side)
-    
-    try:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            temp_img_path = Path(temp_dir) / "input.png"
-            img.save(temp_img_path, "PNG")
-            
-            prompt_text = get_prompt(cfg)
-            
-            messages = [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image", "image": str(temp_img_path)},
-                        {"type": "text", "text": prompt_text},
-                    ],
-                }
-            ]
-            
-            texts = [
-                processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-            ]
-            
-            inputs = processor(
-                text=texts,
-                images=[img],
-                padding=True,
-                return_tensors="pt",
-            )
-            
-            device = next(model.parameters()).device
-            inputs = inputs.to(device)
-            
-            with torch.no_grad():
-                generated_ids = model.generate(**inputs, max_new_tokens=16384, do_sample=False)
-                
-            if "input_ids" in inputs:
-                input_ids = inputs.input_ids
-            else:
-                input_ids = inputs.inputs
-                
-            generated_ids_trimmed = [
-                out_ids[len(in_ids):] for in_ids, out_ids in zip(input_ids, generated_ids)
-            ]
-            
-            output_texts = processor.batch_decode(
-                generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
-            )
-            
-            result = output_texts[0] if output_texts else ""
 
-            if cfg["use_dollars_for_math"]:
-                result = convert_math_delimiters(result)
-            return result
+    try:
+        prompt_text = get_prompt(cfg)
+        
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    # There used to be a path here, but it seems to not be needed.
+                    # It used to be like this: {"type": "image", "image": temp_file_path},
+                    {"type": "image"},
+                    {"type": "text", "text": prompt_text},
+                ],
+            }
+        ]
+        
+        texts = [
+            processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        ]
+        
+        inputs = processor(
+            text=texts,
+            images=[img],
+            padding=True,
+            return_tensors="pt",
+        )
+        
+        device = next(model.parameters()).device
+        inputs = inputs.to(device, dtype=model.dtype)
+        
+        with torch.no_grad():
+            generated_ids = model.generate(**inputs, max_new_tokens=16384, do_sample=False)
+            
+        if "input_ids" in inputs:
+            input_ids = inputs.input_ids
+        else:
+            input_ids = inputs.inputs
+            
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(input_ids, generated_ids)
+        ]
+        
+        output_texts = processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )
+        
+        result = output_texts[0] if output_texts else ""
+
+        if cfg["use_dollars_for_math"]:
+            result = convert_math_delimiters(result)
+        return result
             
     except Exception as e:
         log.error("OCR inference failed: %s", e)
